@@ -91,7 +91,8 @@ IGNORE 4 ROWS;
 
 #Наполнение данными справочника из raw в справочник
 INSERT INTO `testdb`.`vine_target_all` (restaurant, region, address, organozation, INN)
-SELECT REPLACE(CONVERT(restaurant using cp1251),' ','') AS restaurant,
+SELECT DISTINCT
+       REPLACE(CONVERT(restaurant using cp1251),' ','') AS restaurant,
        REPLACE(REPLACE(CONVERT(region using cp1251),' ',''),'-',' ') AS region, 
        TRIM(concat(REPLACE(CONVERT(street using cp1251),' ',''),' ',REPLACE(brief_street,' ',''), ', ', REPLACE(number_street,' ',''))) AS address,
        REPLACE(CONVERT(organozation using cp1251),' ','') AS organozation,  
@@ -99,33 +100,33 @@ SELECT REPLACE(CONVERT(restaurant using cp1251),' ','') AS restaurant,
 FROM testdb.raw_vine_target
 WHERE target = 'Да';
 
-
+truncate `testdb`.`vine_import_1`;
 #Наполнение данными продаж из raw в import 
 INSERT INTO `testdb`.`vine_import_1` (region,report_date,SKU,quantity_bottle,brand,restaurant,organozation,INN,col1,sales_channel,address,target,warehouse,GEO)
 SELECT 
-       CONVERT(REPLACE(rvi.region,' ','') using cp1251) AS region, 
-       CONVERT(DATE_FORMAT(STR_TO_DATE(REPLACE(rvi.report_date,' ',''), '%d.%m.%Y %H:%i:%s'), '%Y-%m-%d') using cp1251) AS report_date,
-       CONVERT(REPLACE(rvi.SKU,' ','') using cp1251) AS SKU, 
-       REPLACE(rvi.quantity_bottle,' ','') AS quantity_bottle,  
-       CONVERT(REPLACE(rvi.brand,' ','') using cp1251) AS brand,  
-       CONVERT(REPLACE(rvi.restaurant,' ','') using cp1251) AS restaurant, 
-       CONVERT(REPLACE(rvi.organozation,' ','') using cp1251) AS organozation,  
-       trim(REPLACE(rvi.INN,' ','')) AS INN,  
-       CONVERT(REPLACE(rvi.col1,' ','') using cp1251) AS col1,  
-       CONVERT(REPLACE(rvi.sales_channel,' ','') using cp1251) AS sales_channel,  
-       CASE WHEN rvi.address LIKE '%Арбатская пл%' 
+       CONVERT(REPLACE(region,' ','') using cp1251) AS region, 
+       CONVERT(DATE_FORMAT(STR_TO_DATE(REPLACE(report_date,' ',''), '%d.%m.%Y %H:%i:%s'), '%Y-%m-%d') using cp1251) AS report_date,
+       CONVERT(REPLACE(SKU,' ','') using cp1251) AS SKU, 
+       REPLACE(quantity_bottle,' ','') AS quantity_bottle,  
+       CONVERT(REPLACE(brand,' ','') using cp1251) AS brand,  
+       CONVERT(REPLACE(restaurant,' ','') using cp1251) AS restaurant, 
+       CONVERT(REPLACE(organozation,' ','') using cp1251) AS organozation, 
+       trim(REPLACE(INN,' ','')) AS INN,  
+       CONVERT(REPLACE(col1,' ','') using cp1251) AS col1,  
+       CONVERT(REPLACE(sales_channel,' ','') using cp1251) AS sales_channel,  
+       CASE WHEN address LIKE '%Арбатская пл%' #по просьбе Романа привести к единому виду тк адреса два
             THEN CONVERT('Москва г, Арбатская пл, 14' using cp1251)
-            ELSE CONVERT(REPLACE(rvi.address,' ','') using cp1251) END AS address,  
+            ELSE CONVERT(REPLACE(address,' ','') using cp1251) END AS address,  
        CONVERT('Нецелевой' using cp1251) AS target, 
-       CONVERT(REPLACE(rvi.warehouse,' ','') using cp1251) AS warehouse,
+       CONVERT(REPLACE(warehouse,' ','') using cp1251) AS warehouse,
        CONVERT(vg.geo using cp1251) AS GEO
 FROM testdb.raw_vine_import_2 rvi
-                            LEFT JOIN vine_geo vg ON (REPLACE(rvi.address,' ','') = vg.address AND 
-                                                      REPLACE(rvi.INN,' ','') = vg.INN) 
-WHERE REPLACE(rvi.region,' ','') <> 'Вся страна' AND 
-      REPLACE(rvi.organozation,' ','') NOT LIKE '%симпл%' AND 
-      CASE WHEN REPLACE(rvi.region,' ','') LIKE '%Санкт%' AND REPLACE(rvi.warehouse,' ','') like '%Санкт%' THEN 1 
-            WHEN REPLACE(rvi.region,' ','') LIKE '%Москва%' AND REPLACE(rvi.warehouse,' ','') LIKE '%Москва%' THEN 1
+                            LEFT JOIN vine_geo vg ON (REPLACE(address,' ','') = vg.address AND 
+                                                      REPLACE(INN,' ','') = vg.INN) 
+WHERE REPLACE(region,' ','') <> 'Вся страна' AND 
+      REPLACE(organozation,' ','') NOT LIKE '%симпл%' AND 
+      CASE WHEN REPLACE(region,' ','') LIKE '%Санкт%' AND REPLACE(warehouse,' ','') like '%Санкт%' THEN 1 
+            WHEN REPLACE(region,' ','') LIKE '%Москва%' AND REPLACE(warehouse,' ','') LIKE '%Москва%' THEN 1
             ELSE 0 END = 1;
      
 #Нужно проставить бренду сикоры названия ресторанов
@@ -197,7 +198,7 @@ targer_present AS
                    WHERE target = 'Целевой' AND brand like '%Галицкий%' AND (
                                    (region like '%Санкт%' and quantity_bottle > 0) 
                                    OR
-                                   (region like '%Моск%' AND report_date > (SELECT DATE_SUB(MAX(report_date), INTERVAL 3 MONTH) FROM `testdb`.`vine_import_1` WHERE region like '%Моск%') AND quantity_bottle > 0))),
+                                   (region like '%Моск%' AND report_date >= (SELECT DATE_SUB(MAX(report_date), INTERVAL 3 MONTH) FROM `testdb`.`vine_import_1` WHERE region like '%Моск%') AND quantity_bottle > 0))),
 targer_present_finished AS 
                   (SELECT DISTINCT restaurant,geo, CONVERT('Целевой - не присутствуем' using cp1251) AS type_target, INN
                    FROM `testdb`.`vine_import_1`
@@ -228,6 +229,33 @@ date_with_period AS (SELECT report_date,
 UPDATE `testdb`.`vine_import_1` vi1
                        LEFT JOIN date_with_period dwp ON (vi1.report_date = dwp.report_date)
 set vi1.period = dwp.period;
+
+#обновим поле organozation по просьбе Романа сделать абривиатуры ООО, ПАО и тд
+UPDATE `testdb`.`vine_import_1` 
+set `vine_import_1`.`organozation` = CASE #замена на ООО
+	                                     WHEN CONVERT(REPLACE(organozation,' ','') using cp1251) LIKE '%об%' AND 
+	                                     CONVERT(REPLACE(organozation,' ','') using cp1251) LIKE '%огр%' AND
+	                                     CONVERT(REPLACE(organozation,' ','') using cp1251) LIKE '%отве%' THEN CONCAT('OOO ', TRIM(SUBSTRING(CONVERT(REPLACE(organozation,' ','') using cp1251), LOCATE(' ', CONVERT(REPLACE(organozation,' ','') using cp1251), LOCATE(' ', CONVERT(REPLACE(organozation,' ','') using cp1251), LOCATE(' ', CONVERT(REPLACE(organozation,' ','') using cp1251), LOCATE(' ', CONVERT(REPLACE(organozation,' ','') using cp1251)) + 1) + 1) + 1) + 1)))
+                                           #замена на Ао
+                                         WHEN CONVERT(REPLACE(organozation,' ','') using cp1251) LIKE 'акци%' AND 
+                                              CONVERT(REPLACE(organozation,' ','') using cp1251) LIKE '%об%' THEN CONCAT('АО ',TRIM(SUBSTRING(CONVERT(REPLACE(organozation,' ','') using cp1251), LOCATE(' ', CONVERT(REPLACE(organozation,' ','') using cp1251), LOCATE(' ', CONVERT(REPLACE(organozation,' ','') using cp1251)) + 1) + 1)))
+                                           #замена на ЗАО
+                                         WHEN CONVERT(REPLACE(organozation,' ','') using cp1251) LIKE '%закр%' AND 
+                                              CONVERT(REPLACE(organozation,' ','') using cp1251) LIKE '%акц%' AND
+                                              CONVERT(REPLACE(organozation,' ','') using cp1251) LIKE '%об%' 
+                                              THEN CONCAT('ЗАО ', TRIM(SUBSTRING(CONVERT(REPLACE(organozation,' ','') using cp1251), LOCATE(' ', CONVERT(REPLACE(organozation,' ','') using cp1251), LOCATE(' ', CONVERT(REPLACE(organozation,' ','') using cp1251), LOCATE(' ', CONVERT(REPLACE(organozation,' ','') using cp1251)) + 1) + 1) + 1)))
+                                           #замена на OАО
+                                         WHEN CONVERT(REPLACE(organozation,' ','') using cp1251) LIKE '%откр%' AND 
+                                              CONVERT(REPLACE(organozation,' ','') using cp1251) LIKE '%акц%' AND
+                                              CONVERT(REPLACE(organozation,' ','') using cp1251) LIKE '%об%' 
+                                              THEN CONCAT('ОАО ', TRIM(SUBSTRING(CONVERT(REPLACE(organozation,' ','') using cp1251), LOCATE(' ', CONVERT(REPLACE(organozation,' ','') using cp1251), LOCATE(' ', CONVERT(REPLACE(organozation,' ','') using cp1251), LOCATE(' ', CONVERT(REPLACE(organozation,' ','') using cp1251)) + 1) + 1) + 1)))
+                                           #замена на ПАО
+                                         WHEN CONVERT(REPLACE(organozation,' ','') using cp1251) LIKE '%публ%' AND 
+                                              CONVERT(REPLACE(organozation,' ','') using cp1251) LIKE '%акц%' AND
+                                              CONVERT(REPLACE(organozation,' ','') using cp1251) LIKE '%об%' 
+                                              THEN CONCAT('ПАО ', TRIM(SUBSTRING(CONVERT(REPLACE(organozation,' ','') using cp1251), LOCATE(' ', CONVERT(REPLACE(organozation,' ','') using cp1251), LOCATE(' ', CONVERT(REPLACE(organozation,' ','') using cp1251), LOCATE(' ', CONVERT(REPLACE(organozation,' ','') using cp1251)) + 1) + 1) + 1)))
+                                              ELSE 0 END; 
+
 
 #отправка письма на обработку 
 INSERT INTO `email`.`input_mail`
@@ -263,3 +291,4 @@ INSERT INTO `email`.`input_mail`
                                                           '</tr>') SEPARATOR '') AS artefacts FROM a)
               SELECT concat(CONVERT(d.letter_body using cp1251), CONVERT(e.artefacts using cp1251), '</table>') AS send 
               FROM e JOIN d USING(maps)) qwe;
+              
