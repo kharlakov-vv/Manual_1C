@@ -104,29 +104,29 @@ truncate `testdb`.`vine_import_1`;
 #Наполнение данными продаж из raw в import 
 INSERT INTO `testdb`.`vine_import_1` (region,report_date,SKU,quantity_bottle,brand,restaurant,organozation,INN,col1,sales_channel,address,target,warehouse,GEO)
 SELECT 
-       CONVERT(REPLACE(region,' ','') using cp1251) AS region, 
+       CONVERT(REPLACE(rvi.region,' ','') using cp1251) AS region, 
        CONVERT(DATE_FORMAT(STR_TO_DATE(REPLACE(report_date,' ',''), '%d.%m.%Y %H:%i:%s'), '%Y-%m-%d') using cp1251) AS report_date,
-       CONVERT(REPLACE(SKU,' ','') using cp1251) AS SKU, 
+       CONVERT(REPLACE(REPLACE(SUBSTRING_INDEX(sku, ' ', LENGTH(sku) - LENGTH(REPLACE(sku, ' ', '')) - 1), 'ГАЛИЦКИЙ И ГАЛИЦКИЙ', 'ГАЛИЦКИЙ'),' ','') using cp1251) AS SKU, #по просьбе Романа, оставить только Галицкий и убрать объем бутылки
        REPLACE(quantity_bottle,' ','') AS quantity_bottle,  
        CONVERT(REPLACE(brand,' ','') using cp1251) AS brand,  
        CONVERT(REPLACE(restaurant,' ','') using cp1251) AS restaurant, 
        CONVERT(REPLACE(organozation,' ','') using cp1251) AS organozation, 
-       trim(REPLACE(INN,' ','')) AS INN,  
+       trim(REPLACE(rvi.INN,' ','')) AS INN,  
        CONVERT(REPLACE(col1,' ','') using cp1251) AS col1,  
        CONVERT(REPLACE(sales_channel,' ','') using cp1251) AS sales_channel,  
-       CASE WHEN address LIKE '%Арбатская пл%' #по просьбе Романа привести к единому виду тк адреса два
+       CASE WHEN rvi.address LIKE '%Арбатская пл%' #по просьбе Романа привести к единому виду тк адреса два
             THEN CONVERT('Москва г, Арбатская пл, 14' using cp1251)
-            ELSE CONVERT(REPLACE(address,' ','') using cp1251) END AS address,  
+            ELSE CONVERT(REPLACE(rvi.address,' ','') using cp1251) END AS address,  
        CONVERT('Нецелевой' using cp1251) AS target, 
        CONVERT(REPLACE(warehouse,' ','') using cp1251) AS warehouse,
        CONVERT(vg.geo using cp1251) AS GEO
 FROM testdb.raw_vine_import_2 rvi
-                            LEFT JOIN vine_geo vg ON (REPLACE(address,' ','') = vg.address AND 
-                                                      REPLACE(INN,' ','') = vg.INN) 
-WHERE REPLACE(region,' ','') <> 'Вся страна' AND 
+                            LEFT JOIN vine_geo vg ON (REPLACE(rvi.address,' ','') = vg.address AND 
+                                                      REPLACE(rvi.INN,' ','') = vg.INN) 
+WHERE REPLACE(rvi.region,' ','') <> 'Вся страна' AND 
       REPLACE(organozation,' ','') NOT LIKE '%симпл%' AND 
-      CASE WHEN REPLACE(region,' ','') LIKE '%Санкт%' AND REPLACE(warehouse,' ','') like '%Санкт%' THEN 1 
-            WHEN REPLACE(region,' ','') LIKE '%Москва%' AND REPLACE(warehouse,' ','') LIKE '%Москва%' THEN 1
+      CASE WHEN REPLACE(rvi.region,' ','') LIKE '%Санкт%' AND REPLACE(warehouse,' ','') like '%Санкт%' THEN 1 
+            WHEN REPLACE(rvi.region,' ','') LIKE '%Москва%' AND REPLACE(warehouse,' ','') LIKE '%Москва%' THEN 1
             ELSE 0 END = 1;
      
 #Нужно проставить бренду сикоры названия ресторанов
