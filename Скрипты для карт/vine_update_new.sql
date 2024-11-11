@@ -30,7 +30,8 @@ CREATE TABLE IF NOT EXISTS `testdb`.`vine_import_1` (
   `region` varchar(15) DEFAULT NULL COMMENT 'Регион',
   `report_date` date DEFAULT NULL COMMENT 'Отчетный дата',
   `period` varchar(20) DEFAULT NULL COMMENT 'Период',
-  `SKU` varchar(150) DEFAULT NULL COMMENT 'Полное наименование',
+  `SKU` varchar(150) DEFAULT NULL COMMENT 'Урезанное наименование',
+  `SKU_full` varchar(150) DEFAULT NULL COMMENT 'Полное наименование',
   `quantity_bottle` float DEFAULT NULL COMMENT 'Кол-во поставок, шт',
   `brand` varchar(100) DEFAULT NULL COMMENT 'Бренд',
   `restaurant` varchar(100) DEFAULT NULL COMMENT 'Ресторан',
@@ -102,11 +103,12 @@ WHERE target = 'Да';
 
 truncate `testdb`.`vine_import_1`;
 #Наполнение данными продаж из raw в import 
-INSERT INTO `testdb`.`vine_import_1` (region,report_date,SKU,quantity_bottle,brand,restaurant,organozation,INN,col1,sales_channel,address,target,warehouse,GEO)
+INSERT INTO `testdb`.`vine_import_1` (region,report_date,SKU,SKU_full,quantity_bottle,brand,restaurant,organozation,INN,col1,sales_channel,address,target,warehouse,GEO)
 SELECT 
        CONVERT(REPLACE(rvi.region,' ','') using cp1251) AS region, 
        CONVERT(DATE_FORMAT(STR_TO_DATE(REPLACE(report_date,' ',''), '%d.%m.%Y %H:%i:%s'), '%Y-%m-%d') using cp1251) AS report_date,
-       CONVERT(REPLACE(REPLACE(SUBSTRING_INDEX(sku, ' ', LENGTH(sku) - LENGTH(REPLACE(sku, ' ', '')) - 1), 'ГАЛИЦКИЙ И ГАЛИЦКИЙ', 'ГАЛИЦКИЙ'),' ','') using cp1251) AS SKU, #по просьбе Романа, оставить только Галицкий и убрать объем бутылки
+       CONVERT(REPLACE(REPLACE(SUBSTRING_INDEX(sku, ' ', LENGTH(sku) - LENGTH(REPLACE(sku, ' ', '')) - 4), 'ГАЛИЦКИЙ И ГАЛИЦКИЙ', 'ГАЛИЦКИЙ'),' ','') using cp1251) AS SKU_min, #по просьбе Романа, 1)убираем объем бутылки 2) меняем Галицкий и Галицкий на Галицкий 3) убираем % 4)убираем тип вина
+       CONVERT(REPLACE(REPLACE(REPLACE(SKU,' ',''),'Россия',''),'ГАЛИЦКИЙ И ГАЛИЦКИЙ', 'ГАЛИЦКИЙ') using cp1251) AS SKU_full, #оставил для графика с ТОП по продажам вина 
        REPLACE(quantity_bottle,' ','') AS quantity_bottle,  
        CONVERT(REPLACE(brand,' ','') using cp1251) AS brand,  
        CONVERT(REPLACE(restaurant,' ','') using cp1251) AS restaurant, 
@@ -217,7 +219,7 @@ SET tvi.type_target = ifnull(targer_present_finished.type_target, CONVERT('Не�
 
 #обновим улицу
 UPDATE `testdb`.`vine_import_1`
-set `vine_import_1`.`street` = trim(SUBSTRING(`vine_import_1`.`address`, INSTR(`vine_import_1`.`address`, ',') + 1))
+set `vine_import_1`.`street` = trim(SUBSTRING(`vine_import_1`.`address`, INSTR(`vine_import_1`.`address`, ',') + 1));
 
 #обновим период
 WITH 
